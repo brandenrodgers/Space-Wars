@@ -6,12 +6,16 @@ var laser = new Audio("laser.wav");
 var crash = new Audio("crash.wav");
 var powerup = new Audio("powerup.wav");
 var explode = new Audio("explode.wav");
+var warp = new Audio("warp.wav");
+var shield_sound = new Audio("shield.wav");
+var rocket_sound = new Audio("rocket.wav");
 
 //Create player object
 var player = new Object;
 player['position'];
 player['health'];
 player['dead'];
+player['state']
 			
 //Enemy object
 function enemy(position, direction){
@@ -20,6 +24,7 @@ function enemy(position, direction){
 }
 
 var enemies = new Array();
+var enemy_spawn = 25;
 
 //Speed options
 var speed = new Object;
@@ -29,11 +34,23 @@ speed['hard'] = 30;
 player['speed'];
 
 //missiles
-function missile(position, direction){
+function missile(position, direction, caliber){
 	this.position = position;
 	this.direction = direction;
+	this.caliber = caliber;
 }
 var missiles = new Array();
+var missile_timer = 0;
+var missile_caliber = "regular";
+
+//Enemy object
+function explosion(position, duration, e_size){
+	this.position = position;
+	this.duration = duration;
+	this.e_size = e_size;
+}
+
+var explosions = new Array();
 
 //Directions for players to move
 var direction = new Object;
@@ -183,18 +200,26 @@ function move_player()
 {			
 	if (player['position'][0] < 0)
 	{
+		warp.currentTime = 0;
+		warp.play();
 		player['position'][0] = 392;
 	} 
 	else if (player['position'][0] > 392)
 	{
+		warp.currentTime = 0;
+		warp.play();
 		player['position'][0] = 0;
 	} 
 	else if (player['position'][1] < 0)
 	{
+		warp.currentTime = 0;
+		warp.play();
 		player['position'][1] = 392;
 	}
 	else if (player['position'][1] > 392)
 	{
+		warp.currentTime = 0;
+		warp.play();
 		player['position'][1] = 0;
 	}
 	
@@ -203,9 +228,10 @@ function move_player()
 	player['position'][1] += direction[player['direction']][1];
 }
 
-//Move enemy towards player
+//Move missiles shot by player
 function move_missiles()
 {			
+	missile_timer -= 1;
 	for(var i = 0;i<missiles.length;i++)
 	{
 		if (missiles[i]['direction'] == 'right')
@@ -287,17 +313,30 @@ function activate_power_up()
 	{
 		player['health'] += 1;
 		score_multiplier = 1;
+		player['shield'] = 0;
 		effect = "Health + 1";
+		missile_caliber = "regular";
 	}
 	else if (power_up['type'] == "onion")
 	{
-		score_multiplier = 4;
-		effect = "score 4x";
+		score_multiplier = 1;
+		player['shield'] = 0;
+		effect = "Rockets";
+		missile_caliber = "rocket";
+	}
+	else if (power_up['type'] == "banana")
+	{
+		score_multiplier = 1;
+		effect = "Shield 5";
+		player['shield'] = 5;
+		missile_caliber = "regular";
 	}
 	else 
 	{
 		score_multiplier = 2;
-		effect = "Score 2x";
+		player['shield'] = 0;
+		missile_caliber = "regular";
+		effect = "score 2x";
 	}
 	document.getElementById("currenteffect").innerHTML = effect;
 }
@@ -305,6 +344,7 @@ function activate_power_up()
 //Check collisions (enemies, missiles, power_ups)
 function check_collision()
 {
+	var missile_hit = false;
 	//player -> power ups
 	if(Math.abs(power_up['position'][0] - player['position'][0]) <= 5 && 
 		Math.abs(power_up['position'][1] - player['position'][1]) <= 5)
@@ -312,7 +352,6 @@ function check_collision()
 		powerup.play();
 		activate_power_up();
 		make_power_up();
-		make_enemy();
 	} 
 	   
 	 //player -> enemy  
@@ -320,44 +359,81 @@ function check_collision()
 	{
 		if (player['position'][0] == enemies[i]['position'][0] && player['position'][1] == enemies[i]['position'][1])
 		{
-		player['health'] -= 1;
-		crash.currentTime = 0;
-		crash.play();
-		break;
+			if (player['shield'] <= 0)
+			{
+				player['health'] -= 1;
+				crash.currentTime = 0;
+				crash.play();
+				break;
+			}
+			else
+			{
+				shield_sound.currentTime = 0;
+				shield_sound.play();
+				player['shield'] -= 1;
+				effect = "Shield " + player['shield'];
+				document.getElementById("currenteffect").innerHTML = effect;
+			}
+
 		}	
 	}	
 
 	//missile -> enemy  
-	for(var i = 0;i<missiles.length;i++)
+	if (missile_caliber ==  "regular")
 	{
-		for(var e = 0;e<enemies.length;e++)
+		for(var i = 0;i<missiles.length;i++)
 		{
-			if (missiles[i]['direction'] == 'left' || missiles[i]['direction'] == 'right')
+			for(var e = 0;e<enemies.length;e++)
 			{
-				if (Math.abs(missiles[i]['position'][0] - enemies[e]['position'][0]) <= 6 && 
-					missiles[i]['position'][1] == enemies[e]['position'][1])
+				
+				if (missiles[i]['direction'] == 'left' || missiles[i]['direction'] == 'right')
 				{
-					enemies.splice(e, 1);
-					missiles.splice(i, 1);
-					explode.currentTime = 0;
-					explode.play();
-					update_score();
-					break;
+					if (Math.abs(missiles[i]['position'][0] - enemies[e]['position'][0]) <= 6 && 
+						missiles[i]['position'][1] == enemies[e]['position'][1])
+					{
+						make_explosion(enemies[e]['position'][0], enemies[e]['position'][1], "small");
+						enemies.splice(e, 1);
+						missiles.splice(i, 1);
+						update_score();
+						break;
+					}
+				}
+				else
+				{
+					if (missiles[i]['position'][0] == enemies[e]['position'][0] && 
+						Math.abs(missiles[i]['position'][1] - enemies[e]['position'][1]) <= 6)
+					{
+						make_explosion(enemies[e]['position'][0], enemies[e]['position'][1], "small");
+						enemies.splice(e, 1);
+						missiles.splice(i, 1);
+						update_score();
+						break;
+					}
 				}
 			}
-			else
+		}
+	}
+	else 
+	{
+		for(var i = 0;i<missiles.length;i++)
+		{
+			missile_hit = false;
+			for(var e = 0;e<enemies.length;e++)
 			{
-				if (missiles[i]['position'][0] == enemies[e]['position'][0] && 
-					Math.abs(missiles[i]['position'][1] - enemies[e]['position'][1]) <= 6)
+		        if (Math.abs(missiles[i]['position'][0] - enemies[e]['position'][0]) <= 25 && 
+					Math.abs(missiles[i]['position'][1] - enemies[e]['position'][1]) <= 25)
 				{
+					make_explosion(enemies[e]['position'][0], enemies[e]['position'][1], "big");
 					enemies.splice(e, 1);
-					missiles.splice(i, 1);
-					explode.currentTime = 0;
-					explode.play();
 					update_score();
-					break;
+					missile_hit = true;
 				}
-			}	
+			}
+			if (missile_hit)
+			{
+				missiles.splice(i, 1);
+			}
+			
 		}
 	} 
 
@@ -376,6 +452,16 @@ function check_pos_valid(pos)
 {
 	return true;
 }
+
+//Create power up at random position
+function make_explosion(x, y, s)
+{
+	var explosion1 = new explosion([x, y], 10, s);
+	explosions[explosions.length] = explosion1;
+	explode.currentTime = 0;
+	explode.play();
+}
+
 
 //Create power up at random position
 function make_power_up()
@@ -411,6 +497,8 @@ function make_power_up()
 
 function make_enemy()
 {
+	if (enemy_spawn <= 1)
+	{
 	var pos = [Math.floor(Math.random()*40),Math.floor(Math.random()*40)];
 	while(!check_pos_valid(pos))
 		{
@@ -418,14 +506,32 @@ function make_enemy()
 	}
 	var enemy1 = new enemy(new Array(pos[0]*10,pos[1]*10), 'up');
 	enemies[enemies.length] = enemy1;
+	enemy_spawn = 25;
+	}
+	else 
+	{
+		enemy_spawn -= 1;
+	}
 }
 
 function make_missile()
 {
-	var missile1 = new missile([player['position'][0], player['position'][1]], player['direction']);
-	missiles[missiles.length] = missile1;
-	laser.currentTime = 0;
-	laser.play();
+	if (missile_timer <= 0)
+	{
+		var missile1 = new missile([player['position'][0], player['position'][1]], player['direction'], missile_caliber);
+		missiles[missiles.length] = missile1;
+		missile_timer = 5;
+		if (missile_caliber == "regular")
+		{
+			laser.currentTime = 0;
+			laser.play();
+		}
+		else 
+		{
+			rocket_sound.currentTime = 0;
+			rocket_sound.play();
+		}
+	}
 }
 
 function keyListener(e)
@@ -464,6 +570,30 @@ function keyListener(e)
 	}
 }
 
+function update_mis_exp()
+{
+	for(var i = 0;i<explosions.length;i++)
+	{
+		if (explosions[i]['duration'] == 0)
+		{
+			explosions.splice(i, 1);
+		}
+		else 
+		{
+			explosions[i]['duration'] -= 1;
+		}
+	}
+
+	for(var i = 0;i<missiles.length;i++)
+	{
+		if (missiles[i]['position'][0] < 0 || missiles[i]['position'][0] > 400 ||
+			missiles[i]['position'][1] < 0 || missiles[i]['position'][1] > 400)
+		{
+			missiles.splice(i, 1);
+		}
+	}
+
+}
 
 function draw()
 {
@@ -488,8 +618,16 @@ function draw()
 	for(var i = 0;i<missiles.length;i++)
 	{
     var missile_image = new Image();
-	missile_image.src = "missile" + missiles[i]['direction'] + ".png";
+	missile_image.src = missile_caliber + "missile" + missiles[i]['direction'] + ".png";
 	context.drawImage(missile_image,missiles[i]['position'][0],missiles[i]['position'][1]);
+	}
+
+	//Draw explosions
+	for(var i = 0;i<explosions.length;i++)
+	{
+    var explosion_image = new Image();
+	explosion_image.src = explosions[i]['e_size'] + "explosion.png";
+	context.drawImage(explosion_image,explosions[i]['position'][0],explosions[i]['position'][1]);
 	}
 
 }
@@ -498,9 +636,11 @@ function step()
 {
 	move_player();
 	move_enemy();
+	make_enemy();
 	move_missiles();
 	check_collision();
 	check_health();
+	update_mis_exp(); //update missiles and explosions
 	draw();
 	if(player['dead'])
 	{
@@ -535,6 +675,7 @@ function game()
 	player['direction'] = 'right';
 	player['dead'] = false;
 	player['health'] = 5;
+	player['shield'] = 0;
 	score = 0;
 	document.getElementById("button").style.visibility = 'hidden';
 	document.getElementById("result").innerHTML = "";
